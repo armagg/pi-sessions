@@ -1,8 +1,13 @@
 {
 	"name": "pi-sessions",
-	"version": "0.1.0",
-	"description": "List and inspect saved pi sessions: /sessions slash command and a session_list tool",
+	"version": "0.1.1",
+	"description": "Browse saved pi sessions from inside pi: /sessions picker and a recent_sessions tool",
 	"keywords": ["pi-package"],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/armagg/pi-sessions.git"
+	},
 	"type": "module",
 	"pi": {
 		"extensions": ["./extensions/session-list.ts"]

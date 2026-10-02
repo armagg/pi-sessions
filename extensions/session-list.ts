@@ -1,10 +1,10 @@
 /**
- * pi-sessions: list saved sessions from inside pi.
+ * List saved pi sessions from inside pi.
  *
  * Adds:
  * - /sessions [all] slash command: shows recent sessions for the current
  *   project (or all projects with "all"), newest first.
- * - session_list tool: model-callable, returns the same listing as text.
+ * - recent_sessions tool: model-callable, returns the same listing as text.
  *
  * Reads sessions through SessionManager exported by the host package, so it
  * follows whatever session dir/cwd rules the running pi uses.

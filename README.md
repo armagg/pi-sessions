@@ -1,15 +1,22 @@
 # pi-sessions
 
-A [pi](https://github.com/earendil-works/pi) package that lists your saved
-sessions from inside pi.
+A small [pi](https://github.com/earendil-works/pi) package for looking at your
+old sessions without leaving the editor.
 
-Adds two things:
+pi already keeps every conversation as a session file, but the only built-in
+way to browse them is the `--resume` picker at startup. This adds two things
+to sessions you're already in:
 
-- `/sessions` slash command: shows the most recent sessions for the current
-  project in a picker, newest first. Selecting one shows its full id and file
-  path. Use `/sessions all` to list sessions from every project.
-- `recent_sessions` tool: model-callable, returns the same listing as text so
-  the agent can answer questions like "which sessions did I work on recently?"
+- `/sessions` — a picker with your most recent sessions for the current
+  project, newest first. `/sessions all` does the same across every project.
+  Selecting an entry shows its full id and file path (handy for
+  `pi --session <path>`).
+- a `recent_sessions` tool — lets the model pull the same listing, so you can
+  just ask "what did I work on yesterday?" and get an answer based on actual
+  session history instead of guesswork.
+
+Each line shows the relative time, id prefix, session name (if you named it),
+message count, and the first message of the conversation.
 
 ## Install
 
@@ -17,30 +24,19 @@ Adds two things:
 pi install git:github.com/armagg/pi-sessions
 ```
 
-Update later with:
+Pull updates with `pi update --extensions`.
 
-```bash
-pi update --extensions
-```
+## Notes
 
-## How it works
+- The listing uses the same `SessionManager` your pi uses, so it respects
+  `--session-dir`, named sessions, and the usual cwd rules. If a future pi
+  release changes that API, this package needs a matching bump — file an
+  issue if it breaks.
+- The tool is called `recent_sessions` because `pi-total-recall` already
+  registers `session_list`. If you run both, they don't conflict.
+- Sessions for the current project are matched by cwd, same as the resume
+  picker. If you started pi somewhere else, use `/sessions all`.
 
-Sessions are read through `SessionManager` exported by
-`@earendil-works/pi-coding-agent` (a host-provided package), so the listing
-follows the same session directory and cwd rules as the running pi, including
-`--session-dir` overrides and named sessions.
+## License
 
-## Development
-
-```bash
-mkdir -p node_modules/@earendil-works
-ln -sfn "$(npm root -g)/@earendil-works/pi-coding-agent" node_modules/@earendil-works/pi-coding-agent
-ln -sfn node_modules/@earendil-works/pi-coding-agent/node_modules/typebox node_modules/typebox
-npx tsc -p tsconfig.json
-```
-
-For a local install while developing:
-
-```bash
-pi install /path/to/pi-sessions
-```
+MIT
