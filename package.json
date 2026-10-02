@@ -1,0 +1,13 @@
+{
+	"name": "pi-sessions",
+	"version": "0.1.0",
+	"description": "List and inspect saved pi sessions: /sessions slash command and a session_list tool",
+	"keywords": ["pi-package"],
+	"type": "module",
+	"pi": {
+		"extensions": ["./extensions/session-list.ts"]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*"
+	}
+}
