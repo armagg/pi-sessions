@@ -1,7 +1,7 @@
-# pi-session-lens
+# pi-session-list
 
-[![npm](https://img.shields.io/npm/v/pi-session-lens)](https://www.npmjs.com/package/pi-session-lens)
-[![license](https://img.shields.io/npm/l/pi-session-lens)](https://github.com/armagg/pi-sessions/blob/main/LICENSE)
+[![npm](https://img.shields.io/npm/v/pi-session-list)](https://www.npmjs.com/package/pi-session-list)
+[![license](https://img.shields.io/npm/l/pi-session-list)](https://github.com/armagg/pi-sessions/blob/main/LICENSE)
 
 A small [pi](https://github.com/earendil-works/pi) package for browsing your old
 sessions without leaving the one you're in. One TypeScript file, no
@@ -20,14 +20,14 @@ This adds a search-first picker and two model-callable tools:
 ## Install
 
 ```bash
-pi install npm:pi-session-lens
+pi install npm:pi-session-list
 ```
 
 From git, or for one invocation only:
 
 ```bash
 pi install git:github.com/armagg/pi-sessions
-pi -e npm:pi-session-lens
+pi -e npm:pi-session-list
 ```
 
 Pull updates with `pi update --extensions`.

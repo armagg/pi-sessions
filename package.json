@@ -1,5 +1,5 @@
 {
-	"name": "pi-session-lens",
+	"name": "pi-session-list",
 	"version": "0.2.0",
 	"description": "Browse, search, and read saved pi sessions from inside pi: a /sessions picker with resume and preview, plus recent_sessions and session_transcript tools for the model",
 	"keywords": [
