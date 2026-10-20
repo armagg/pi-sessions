@@ -1,18 +1,45 @@
 {
-	"name": "pi-sessions",
-	"version": "0.1.1",
-	"description": "Browse saved pi sessions from inside pi: /sessions picker and a recent_sessions tool",
-	"keywords": ["pi-package"],
+	"name": "pi-session-lens",
+	"version": "0.2.0",
+	"description": "Browse, search, and read saved pi sessions from inside pi: a /sessions picker with resume and preview, plus recent_sessions and session_transcript tools for the model",
+	"keywords": [
+		"pi-package",
+		"pi",
+		"pi-extension",
+		"pi-coding-agent",
+		"sessions",
+		"session-history",
+		"resume",
+		"search",
+		"transcript"
+	],
 	"license": "MIT",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/armagg/pi-sessions.git"
 	},
 	"type": "module",
+	"files": [
+		"extensions",
+		"README.md",
+		"LICENSE"
+	],
 	"pi": {
-		"extensions": ["./extensions/session-list.ts"]
+		"extensions": [
+			"./extensions/sessions.ts"
+		]
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"typescript": "^5.9.3"
 	},
 	"peerDependencies": {
-		"@earendil-works/pi-coding-agent": "*"
+		"@earendil-works/pi-coding-agent": "*",
+		"typebox": "*"
+	},
+	"publishConfig": {
+		"access": "public"
 	}
 }
