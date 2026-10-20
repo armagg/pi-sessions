@@ -6,3 +6,7 @@ node_modules/
 .env.*
 *.tgz
 .npmrc
+
+# npm 2FA recovery codes — never commit
+.2fa
+.2fa*

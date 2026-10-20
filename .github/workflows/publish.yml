@@ -1,5 +1,21 @@
 name: publish
 
+# Publishes pi-session-list to npm using trusted publishing (OIDC).
+# No NPM_TOKEN secret, no 2FA prompt, no long-lived credential in the repo.
+#
+# One-time setup on npmjs.com (must be done by a maintainer):
+#   Package settings → Trusted publishing → add a GitHub Actions publisher:
+#     Organization/user: armagg
+#     Repository:        pi-sessions
+#     Workflow:          publish.yml
+#     Environment:       (none)
+#     Allowed actions:   npm stage publish  (+ optionally npm publish)
+#
+# This workflow uses `npm stage publish`: it stages the version without 2FA,
+# then a maintainer approves it with 2FA. First release works too — staged
+# publishing can create a brand-new package (placeholder 0.0.0-stage).
+# Approve with:  npm stage approve <stage-id>     (see PUBLISHING.md)
+
 on:
   push:
     tags: ["v*"]
@@ -10,15 +26,26 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # npm provenance
+      id-token: write # OIDC for trusted publishing + provenance
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+
+      # `npm stage` needs npm >= 11.15
+      - run: npm install -g npm@latest && npm --version
+
       - run: npm install --no-audit --no-fund
+
       - run: npm run typecheck
-      - run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - run: npm stage publish --access public
+
+      - name: Next step
+        run: |
+          echo "Staged. A maintainer must approve it with 2FA:"
+          echo "  npm stage list pi-session-list"
+          echo "  npm stage approve <stage-id>"
