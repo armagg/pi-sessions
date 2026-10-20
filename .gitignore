@@ -1,2 +1,8 @@
 node_modules/
 .DS_Store
+
+# never commit credentials or publish artifacts
+.env
+.env.*
+*.tgz
+.npmrc
