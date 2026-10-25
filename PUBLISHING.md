@@ -1,20 +1,21 @@
 # Publishing
 
-The package is built, typechecked, staged on npm, and waiting for one browser
-click. See "Step 2" below.
+**Published.** `pi-session-list@0.2.0` is live on npm and listed at
+https://pi.dev/packages/pi-session-list. This file records how it got there and
+how to release the next version.
 
 ## State
 
 | Item | Value |
 | --- | --- |
-| Package name | `pi-session-list` (now registered on npm as a staged placeholder) |
+| Package name | `pi-session-list` — live on npm |
 | Version | `0.2.0` |
 | Stage ID | `3d002da8-a3df-4491-ac2f-400985d4610e` |
-| Stage status | `staged` (validation passed) |
+| Stage status | approved & published 2026-10-25 08:36 UTC |
 | Tarball | 10.7 kB packed / 31.1 kB unpacked / 4 files |
 | Contents | `extensions/sessions.ts`, `package.json`, `README.md`, `LICENSE` |
 | Typecheck | `npm run typecheck` clean |
-| Live version | **not yet** — blocked on 2FA approval |
+| Live version | **`0.2.0`** — `dist-tags.latest` |
 
 ## The account's second factor is a security key (no authenticator app)
 
