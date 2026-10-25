@@ -96,12 +96,19 @@ put them and abandoned branches stay out.
 Session 01a15886-b1c2-77bd-a78e-017d52b6951b
 Project: /Users/omid/my-project/pi-sessions
 File: /Users/omid/.pi/agent/sessions/…jsonl
-Messages: 99 total, showing 95-98
+Messages: 99 on the active branch (104 message entries in the file, including other branches), showing 2 at indices 95-98
 ----------------------------------------
 [96] assistant · 2026-10-20 09:18 (1 thinking)
   ↳ tool bash {"command":"tsc --noEmit"}
   ↳ result bash ok: tsc done
 ```
+
+`showing N` counts rendered messages, so it always matches the body. A tool
+result is grouped with the message that produced it: a page never starts with
+an orphaned `↳ result`, and `limit`/`offset` count messages rather than
+continuation lines. When `recent_sessions` and `session_transcript` disagree
+about a count, that is why — the listing counts message entries in the file
+(all branches), the transcript counts the active branch.
 
 ## Notes
 

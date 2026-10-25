@@ -1,7 +1,12 @@
 {
 	"name": "pi-session-list",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "Browse, search, and read saved pi sessions from inside pi: a /sessions picker with resume and preview, plus recent_sessions and session_transcript tools for the model",
+	"author": "omid0390",
+	"bugs": {
+		"url": "https://github.com/armagg/pi-sessions/issues"
+	},
+	"homepage": "https://github.com/armagg/pi-sessions#readme",
 	"keywords": [
 		"pi-package",
 		"pi",

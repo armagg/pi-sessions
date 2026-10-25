@@ -78,8 +78,15 @@ interface ListDetails {
 interface TranscriptDetails {
 	id?: string;
 	path?: string;
+	/** Messages on the active branch (what this transcript renders). */
 	total?: number;
+	/** Message entries in the file, including other branches. */
+	fileTotal?: number;
+	/** How many messages were actually rendered. */
+	shown?: number;
+	/** Original index of the first rendered message. */
 	from?: number;
+	/** Original index of the last rendered message. */
 	to?: number;
 	offset?: number;
 	error?: string;
@@ -143,6 +150,20 @@ async function loadSessions(all: boolean, signal?: AbortSignal): Promise<Session
 	return all
 		? await SessionManager.listAll(undefined, undefined, signal)
 		: await SessionManager.list(process.cwd(), undefined, undefined, signal);
+}
+
+/**
+ * Look up the SessionInfo for an already-resolved path. Costs one directory scan,
+ * so callers only use it when the listing gives us extra facts (file message count,
+ * session name) that the header wants to report.
+ */
+async function findInfoByPath(path: string, signal?: AbortSignal): Promise<SessionInfo | undefined> {
+	try {
+		const sessions = await loadSessions(true, signal);
+		return sessions.find((session) => session.path === path);
+	} catch {
+		return undefined;
+	}
 }
 
 function applyFilters(sessions: SessionInfo[], filters: Filters): Hit[] {
@@ -227,14 +248,45 @@ function compactArgs(args: Record<string, unknown> | undefined, max = 120): stri
 	}
 }
 
+/** One message selected for rendering, carrying its original index in the branch. */
+interface TranscriptEntry {
+	index: number;
+	message: TranscriptMessage;
+}
+
+/**
+ * Whether a message produces any output at all. Selection and rendering must agree
+ * on this, otherwise the header advertises messages the body does not contain.
+ */
+function isRenderable(message: TranscriptMessage, toolCalls: boolean): boolean {
+	switch (message.role) {
+		case "user":
+		case "custom":
+			return messageText(message) !== "";
+		case "assistant": {
+			if (messageText(message) !== "") return true;
+			const blocks = Array.isArray(message.content) ? message.content : [];
+			if (blocks.some((block) => block.type === "thinking")) return true;
+			return toolCalls && blocks.some((block) => block.type === "toolCall");
+		}
+		case "toolResult":
+		case "bashExecution":
+			return toolCalls;
+		case "compactionSummary":
+		case "branchSummary":
+			return true;
+		default:
+			return false;
+	}
+}
+
 /**
  * Render messages as readable text: a header per message, its text, and compact
  * one-liners for tool calls and results. Thinking blocks are counted, not shown.
  */
-function formatTranscript(messages: TranscriptMessage[], maxChars: number, toolCalls: boolean, startIndex = 0): string {
+function formatTranscript(entries: TranscriptEntry[], maxChars: number, toolCalls: boolean): string {
 	const lines: string[] = [];
-	messages.forEach((message, index) => {
-		const position = startIndex + index;
+	for (const { index: position, message } of entries) {
 		const when = typeof message.timestamp === "number" ? new Date(message.timestamp).toISOString().slice(0, 16).replace("T", " ") : "";
 		switch (message.role) {
 			case "user": {
@@ -287,7 +339,7 @@ function formatTranscript(messages: TranscriptMessage[], maxChars: number, toolC
 			default:
 				break;
 		}
-	});
+	}
 	return lines.join("\n").replace(/\n{3,}/gu, "\n\n").trimEnd();
 }
 
@@ -295,18 +347,39 @@ function formatTranscript(messages: TranscriptMessage[], maxChars: number, toolC
 function readTranscript(
 	path: string,
 	options: { limit: number; offset: number; maxChars: number; toolCalls: boolean },
-): { text: string; total: number; from: number; to: number; id: string; cwd: string } {
+): { text: string; total: number; shown: number; from: number; to: number; id: string; cwd: string } {
 	const manager = SessionManager.open(path);
 	const messages = manager.buildSessionContext().messages as unknown as TranscriptMessage[];
 	const total = messages.length;
-	const end = Math.max(0, total - options.offset);
+
+	// Page over renderable messages only, so "showing N" matches the body exactly.
+	const renderable: TranscriptEntry[] = [];
+	messages.forEach((message, index) => {
+		if (isRenderable(message, options.toolCalls)) renderable.push({ index, message });
+	});
+
+	// Group each tool result under the message that produced it, so a window never
+	// starts with an orphaned "↳ result" whose parent fell outside the range, and so
+	// `limit`/`offset` count real messages rather than continuation lines.
+	const units: TranscriptEntry[][] = [];
+	for (const entry of renderable) {
+		const last = units[units.length - 1];
+		if (entry.message.role === "toolResult" && last) last.push(entry);
+		else units.push([entry]);
+	}
+
+	const end = Math.max(0, units.length - options.offset);
 	const start = Math.max(0, end - options.limit);
+	const pickedUnits = units.slice(start, end);
+	const picked = pickedUnits.flat();
+
 	const header = manager.getHeader();
 	return {
-		text: formatTranscript(messages.slice(start, end), options.maxChars, options.toolCalls, start),
+		text: formatTranscript(picked, options.maxChars, options.toolCalls),
 		total,
-		from: start,
-		to: end,
+		shown: pickedUnits.length,
+		from: picked[0]?.index ?? -1,
+		to: picked[picked.length - 1]?.index ?? -1,
 		id: header?.id ?? basename(path),
 		cwd: header?.cwd ?? "",
 	};
@@ -558,6 +631,7 @@ export default function sessionsExtension(pi: ExtensionAPI) {
 				const details: TranscriptDetails = { error: resolved.error };
 				return { content: [{ type: "text", text: resolved.error }], details, isError: true };
 			}
+			const info = resolved.info ?? (await findInfoByPath(resolved.path, signal));
 			const limit = clampLimit(params.limit, TRANSCRIPT_MESSAGES);
 			const offset = Math.max(0, Math.floor(params.offset ?? 0));
 			try {
@@ -567,21 +641,35 @@ export default function sessionsExtension(pi: ExtensionAPI) {
 					maxChars: clampLimit(params.maxChars, TRANSCRIPT_CHARS, MAX_MESSAGE_CHARS),
 					toolCalls: params.toolCalls !== false,
 				});
-				const info = resolved.info;
+				// list() counts message entries across every branch; the transcript renders
+				// the active branch only. Label them separately so the numbers reconcile.
+				const fileTotal = info?.messageCount;
+				const branchNote =
+					typeof fileTotal === "number" && fileTotal !== transcript.total
+						? ` (${fileTotal} message entries in the file, including other branches)`
+						: "";
+				const range =
+					transcript.shown > 0 ? `, showing ${transcript.shown} at indices ${transcript.from}-${transcript.to}` : ", nothing to show here";
 				const header = [
 					`Session ${transcript.id}`,
 					info?.name ? `Name: ${info.name}` : undefined,
 					`Project: ${transcript.cwd}`,
 					`File: ${resolved.path}`,
-					`Messages: ${transcript.total} total, showing ${transcript.from}-${Math.max(transcript.from, transcript.to - 1)}${offset > 0 ? ` (offset ${offset} from the end)` : ""}`,
+					`Messages: ${transcript.total} on the active branch${branchNote}${range}${offset > 0 ? ` (offset ${offset} from the end)` : ""}`,
 				]
 					.filter(Boolean)
 					.join("\n");
-				const body = transcript.text || "(no messages)";
+				const body =
+					transcript.text ||
+					(transcript.total === 0
+						? "(no messages)"
+						: `(no renderable messages at offset ${offset}${params.toolCalls === false ? "; toolCalls is false, so tool-only messages are hidden" : ""})`);
 				const details: TranscriptDetails = {
 					id: transcript.id,
 					path: resolved.path,
 					total: transcript.total,
+					fileTotal,
+					shown: transcript.shown,
 					from: transcript.from,
 					to: transcript.to,
 					offset,
