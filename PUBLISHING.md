@@ -126,3 +126,37 @@ Both files are gitignored, `chmod 600`, and outside the npm `files` whitelist:
 Recovery codes are account-takeover material. Move them into a password manager
 and delete these files from the checkout once publishing is done. Do not use
 them for publishing — each use freezes the account for 72 hours.
+
+## Known open item: pi.dev gallery catalog listing
+
+The package page (https://pi.dev/packages/pi-session-list) works, but the package
+is **not in the browsable catalog** (https://pi.dev/packages). Checked
+2026-10-26, ~28h after publish:
+
+| Check | Result |
+| --- | --- |
+| `https://pi.dev/packages/pi-session-list` | 200, correct metadata |
+| `https://pi.dev/packages?name=pi-session-list` | `0 / 5365` — not in the index |
+| npm search `text=pi-session-list` | absent (exact-name query, 250 results) |
+| `npm install pi-session-list@0.2.1` | works |
+
+Cause: the gallery catalog is built from npm's **search** index, and this package
+is not in it. That is an npm-side indexing lag, not a package defect — metadata
+is complete (`keywords` includes `pi-package`, plus `author`, `homepage`,
+`bugs`, `license`, `pi` manifest).
+
+Evidence it is npm-side: a control query on a package created 0.0h ago is also
+absent from npm search, and among packages aged 24-30h some are indexed and some
+are not. There is no documented way to force it. `pi.image` / `pi.video` affect
+the card rendering only, not inclusion.
+
+Re-check after a few days:
+
+```bash
+curl -sL "https://pi.dev/packages?name=pi-session-list" | grep -o 'packages-count">[^<]*'
+curl -s "https://registry.npmjs.org/-/v1/search?text=pi-session-list&size=250" \
+  | python3 -c 'import json,sys;print("pi-session-list" in [o["package"]["name"] for o in json.load(sys.stdin)["objects"]])'
+```
+
+If it is still absent after ~a week, the fallback is discovery by name: install
+instructions work, and the detail page is live and linkable.
