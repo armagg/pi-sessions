@@ -129,71 +129,99 @@ them for publishing — each use freezes the account for 72 hours.
 
 ## Known open item: pi.dev gallery catalog listing
 
-**Status 2026-10-26: root cause identified. It is upstream, not a defect in this
-package.** The package is fully installable and its detail page is live; only the
-browsable catalog index is missing.
+**Status 2026-10-27: root cause narrowed to a broken npm search-index entry.
+Upstream, not a defect in this package.** Install and the detail page work;
+only catalog discovery is missing.
 
-### Root cause chain (each step verified)
+### The decisive evidence
 
-1. The pi.dev gallery is a cron over npm's search API:
-   `GET https://registry.npmjs.org/-/v1/search?text=keywords:pi-package&size=N&from=OFFSET`
-2. **npm caps `from` at 5000.** Verified directly:
+A healthy npm package ranks #1 for its own exact name. This one does not:
 
-   | request | first result |
-   | --- | --- |
-   | `from=0` | `billion-context` |
-   | `from=4999` | `xz-pi-build-ios-apps` |
-   | `from=5000` | `pi-wizlight-status` |
-   | `from=5001` | `billion-context` ← **wraps back to page 1** |
-   | `from=6000` | `billion-context` |
+| `text=` query | `pi-session-list` result | control `pi-session-tools` |
+| --- | --- | --- |
+| exact package name | **absent from top 250** | rank 1 |
+| `session_transcript` | present, **score 0** | — |
+| `recent_sessions` | present, **score 0** | — |
 
-   So at most ~5,250 packages are reachable per query.
-3. **12,823** packages carry the `pi-package` keyword; the gallery lists **5,376**.
-   Roughly 7,400 packages (58%) are unreachable by this mechanism.
-4. Result order is npm's search score, which falls monotonically across the window
-   (`from=0`: 25.9–45.5, `from=2500`: 18.0–18.4, `from=5000`: 14.4–14.8).
-5. **This package's search score is `0`.** It is indexed correctly — the keyword is
-   present, so the query `text=session_transcript` finds it — but with
-   `score.final = 0` it sorts last of 12,823, i.e. position ~12.8k, far outside the
-   `from<=5000` window. Scanning all 21 reachable pages confirms it is absent.
-6. Score `0` correlates with **zero downloads**. `api.npmjs.org/downloads` returns
-   `{"error":"package pi-session-list not found"}` for every date range, while
-   control packages with 3–153 weekly downloads all score 700–930 and are listed.
-   The lowest-download packages in the gallery still have ~153/month.
+Two separate faults in the same record:
 
-### What this is not
+1. The **name is not matchable** — searching `pi-session-list` never returns
+   `pi-session-list`, so it cannot surface by name at all.
+2. Every text match scores **`score.final = 0`**, so it sorts last of 12,823
+   keyword matches and never enters the `keywords:pi-package` feed the gallery
+   cron pages through.
 
-- Not a metadata problem: `keywords` includes `pi-package`; `author`, `homepage`,
-  `bugs`, `license`, and the `pi` manifest are all present and correct.
-- Not fixable by a version bump: 0.2.0 → 0.2.1 did not change indexing.
-- Not specific to this package: it is a long-standing, widely reported upstream
-  issue — earendil-works/pi#7885 (*"npm search not indexing newly published
-  pi-packages"*, closed NOT_PLANNED), #6991, #6873. The maintainer's stated
-  conclusion is that npm search no longer returns reliable results and the only
-  robust fix would be pi maintaining its own npm mirror, which does not exist.
+### The gallery mechanism (and why the window matters)
 
-### Options
+The pi.dev gallery cron reads:
 
-1. **Drive real installs.** Downloads appear to be the score input. A handful of
-   genuine installs is enough to clear the ~14.4 cutoff (control packages with
-   8/week score ~777). Stats aggregate daily and lag, so allow ~1–2 days, then
-   re-check. This is the only lever with evidence behind it.
-2. **Wait.** Packages with a non-zero score drift in and out of the window over
-   days; one reporter saw a package appear and later disappear. Not reliable.
-3. **Accept it and rely on direct discovery.** `pi install npm:pi-session-list`
-   works, and https://pi.dev/packages/pi-session-list is live and linkable. This is
-   what the affected packages in #7885/#6991 settled for.
-4. **Add a data point upstream** on earendil-works/pi#7885 so the mirror fix gets
-   prioritised.
+```
+GET /-/v1/search?text=keywords:pi-package&size=N&from=OFFSET
+```
+
+npm **caps `from` at 5000** — `from=5001` wraps back to page 1 (verified). So a
+single query reaches ~5,250 records. 12,823 packages carry the keyword and the
+gallery lists 5,811; the balance is only visible historically, and reachable
+ordering is opaque (every package reports `popularity/quality/maintenance = 1`,
+capped, so score differences come from npm-internal weighting).
+
+### Correction: downloads are NOT the lever
+
+An earlier revision of this file claimed score tracked download volume. That is
+**wrong** and was disproved on 2026-10-27:
+
+- This package now has **386 downloads** in the window `2026-10-19..2026-10-26`
+  and `score.final` is **still 0**.
+- `pi-cmem` has 22 downloads and scores 777; `pi-session-tools` has 23 and
+  scores 838. Download volume does not explain the score.
+
+Note the downloads API's relative aliases (`last-week`, `last-day`) currently
+return a stale `2026-06-25..2026-07-01` window; use an explicit range
+(`/downloads/point/2026-10-19:2026-10-26/<pkg>`) or the numbers are misleading.
+
+### Not a metadata problem
+
+`keywords` contains `pi-package`; `author`, `homepage`, `bugs`, `license`, and the
+`pi` manifest are present and correct. A version bump (0.2.0 → 0.2.1) did not
+reindex it. `pi.image`/`pi.video` affect card rendering only.
+
+### Matching upstream reports
+
+Multi-month, multi-author, unresolved: earendil-works/pi#7885 (*"npm search not
+indexing newly published pi-packages"*, closed NOT_PLANNED), #6991, #6873.
+Reporters describe exactly this signature — correct metadata, installable,
+`npm view` works, absent from search, version bumps do not help. The maintainer's
+position is that npm search is no longer reliable and a proper fix means pi
+running its own npm mirror.
+
+### Options that remain
+
+1. **Ask npm to reindex.** The index record itself is broken, so this is the only
+   path that fixes the actual fault: npmjs.com/support, including the evidence
+   table above (exact-name miss + score 0).
+2. **Add the data point upstream** on earendil-works/pi#7885 or a fresh issue.
+3. **Accept direct-name discovery.** `pi install npm:pi-session-list` works and
+   https://pi.dev/packages/pi-session-list is live and linkable. This is where the
+   other affected authors landed.
+4. **Publish under a new name** whose index entry is healthy (e.g. a scoped
+   `@omid0390/pi-session-list`), trading the current name for discoverability.
+   Untested; a new package name starts a fresh index record.
+
+**Do not attempt to inflate download counts.** It is metric fraud, breaches npm's
+terms, risks account and package flagging, and on the evidence above it would not
+change the score anyway.
 
 ### Re-check commands
 
 ```bash
-# in the gallery index?
-curl -sL "https://pi.dev/packages?name=pi-session-list" | grep -o 'packages-count">[^<]*'
-# search score (0 = unreachable)
+# does it match its own name (healthy packages return rank 1)?
+curl -s "https://registry.npmjs.org/-/v1/search?text=pi-session-list&size=10" \
+  | python3 -c 'import json,sys;print([o["package"]["name"] for o in json.load(sys.stdin)["objects"]][:3])'
+# score (0 = unreachable)
 curl -s "https://registry.npmjs.org/-/v1/search?text=session_transcript&size=10" \
   | python3 -c 'import json,sys;[print(o["package"]["name"],o["score"]["final"]) for o in json.load(sys.stdin)["objects"]]'
-# downloads (a number instead of "not found" = registrations exist)
-curl -s "https://api.npmjs.org/downloads/point/last-week/pi-session-list"
+# in the gallery index?
+curl -sL "https://pi.dev/packages?name=pi-session-list" | grep -o 'packages-count">[^<]*'
+# downloads (explicit range; aliases are stale)
+curl -s "https://api.npmjs.org/downloads/point/2026-10-19:2026-10-26/pi-session-list"
 ```
