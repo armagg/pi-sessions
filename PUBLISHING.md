@@ -129,92 +129,96 @@ them for publishing — each use freezes the account for 72 hours.
 
 ## Known open item: pi.dev gallery catalog listing
 
-**Status 2026-10-27: root cause narrowed to a broken npm search-index entry.
-Upstream, not a defect in this package.** Install and the detail page work;
-only catalog discovery is missing.
+**Status 2026-10-31 (5 days after publish): unchanged, and now diagnosed as a
+corrupt npm search-index record specific to this package name. Not fixable from
+this repo's metadata.** Install and the detail page work normally.
 
-### The decisive evidence
+### The controlled comparison that settles it
 
-A healthy npm package ranks #1 for its own exact name. This one does not:
+`@zxh126/pi-redact-secrets` was published the **same day** with **near-identical
+downloads** and indexes perfectly:
 
-| `text=` query | `pi-session-list` result | control `pi-session-tools` |
+| | `@zxh126/pi-redact-secrets` | `pi-session-list` |
 | --- | --- | --- |
-| exact package name | **absent from top 250** | rank 1 |
-| `session_transcript` | present, **score 0** | — |
-| `recent_sessions` | present, **score 0** | — |
+| published | 2026-10-26 | 2026-10-26 |
+| downloads 10-26..11-01 | 231 | 228 |
+| staged publish (`0.0.0-stage` first) | yes | yes |
+| registry doc top-level keys | identical | identical |
+| exact-name search | **rank 1, score 733.6** | **absent from top 250** |
+| `keywords:pi-package` window | present (from=4250, score 15.7) | **absent** |
+| pi.dev gallery | **listed** | **not listed** |
 
-Two separate faults in the same record:
+This rules out, with evidence: download volume, recency, metadata, keywords,
+staged publishing, and scoped-vs-unscoped.
 
-1. The **name is not matchable** — searching `pi-session-list` never returns
-   `pi-session-list`, so it cannot surface by name at all.
-2. Every text match scores **`score.final = 0`**, so it sorts last of 12,823
-   keyword matches and never enters the `keywords:pi-package` feed the gallery
-   cron pages through.
+### The fault, precisely
 
-### The gallery mechanism (and why the window matters)
+Two symptoms in one record:
 
-The pi.dev gallery cron reads:
+1. **The name is not matchable.** Querying `text=pi-session-list` never returns
+   `pi-session-list`. Querying `text=pi-session` returns 20+ packages scoring
+   140-245 (`pi-sessions` 223.6, `pi-session-tools` 207.3, `pi-session-viewer`
+   216.4, ...) but not this one, even though the literal string is its name.
+2. **Every text match scores exactly 0** (`session_transcript` → rank 2 score 0,
+   `recent_sessions` → rank 5 score 0). So the document *is* in the index for body
+   text, but its name field and its quality/popularity/maintenance scores were
+   never computed.
 
-```
-GET /-/v1/search?text=keywords:pi-package&size=N&from=OFFSET
-```
+Score 0 sorts it last of 13,076 keyword matches, and the gallery cron can only
+page `from<=5000` (npm wraps `from=5001` back to page 1 — verified). The reachable
+window bottoms out at score 13.95, so a record at 0 can never enter it.
 
-npm **caps `from` at 5000** — `from=5001` wraps back to page 1 (verified). So a
-single query reaches ~5,250 records. 12,823 packages carry the keyword and the
-gallery lists 5,811; the balance is only visible historically, and reachable
-ordering is opaque (every package reports `popularity/quality/maintenance = 1`,
-capped, so score differences come from npm-internal weighting).
+### Not systemic
 
-### Correction: downloads are NOT the lever
+1,874 packages published on/after 2026-10-20 are reachable in that window,
+including several published on 2026-10-31 itself (`pi-fabric` 31.8,
+`confluence-cli` 32.4, `@agimon-ai/*` 31.5). All sampled packages match their own
+names at scores 1,379-1,902. npm indexing is healthy for new packages generally;
+this single record is broken.
 
-An earlier revision of this file claimed score tracked download volume. That is
-**wrong** and was disproved on 2026-10-27:
+### Also ruled out
 
-- This package now has **386 downloads** in the window `2026-10-19..2026-10-26`
-  and `score.final` is **still 0**.
-- `pi-cmem` has 22 downloads and scores 777; `pi-session-tools` has 23 and
-  scores 838. Download volume does not explain the score.
+- Version bumps: 0.2.0 -> 0.2.1 did not reindex it.
+- npm reserved/typosquat names: `pi-session-tool`, `pi-subagent`, `pi-web-accesss`
+  return `versions=[]`, `dist-tags=null` (genuinely reserved). This package has
+  three real versions, so it is not reserved — just unscored.
+- `pi.image`/`pi.video`: affect card rendering only, and the card never renders
+  because the record is unreachable.
+- Downloads API aliases: `last-week`/`last-day` currently return a stale
+  `2026-06-25..2026-07-01` window. Always use an explicit range, e.g.
+  `/downloads/point/2026-10-26:2026-11-01/<pkg>`, or the numbers mislead.
 
-Note the downloads API's relative aliases (`last-week`, `last-day`) currently
-return a stale `2026-06-25..2026-07-01` window; use an explicit range
-(`/downloads/point/2026-10-19:2026-10-26/<pkg>`) or the numbers are misleading.
+### Gallery churn
 
-### Not a metadata problem
+The catalog is not monotonically growing: 5,365 (10-26) -> 5,811 (10-27) ->
+5,404 (10-31), while the keyword population grew 12,823 -> 13,076. Packages enter
+and leave as scores move, so a fixed score-0 record has no path in.
 
-`keywords` contains `pi-package`; `author`, `homepage`, `bugs`, `license`, and the
-`pi` manifest are present and correct. A version bump (0.2.0 → 0.2.1) did not
-reindex it. `pi.image`/`pi.video` affect card rendering only.
+### Options, in order of leverage
 
-### Matching upstream reports
-
-Multi-month, multi-author, unresolved: earendil-works/pi#7885 (*"npm search not
-indexing newly published pi-packages"*, closed NOT_PLANNED), #6991, #6873.
-Reporters describe exactly this signature — correct metadata, installable,
-`npm view` works, absent from search, version bumps do not help. The maintainer's
-position is that npm search is no longer reliable and a proper fix means pi
-running its own npm mirror.
-
-### Options that remain
-
-1. **Ask npm to reindex.** The index record itself is broken, so this is the only
-   path that fixes the actual fault: npmjs.com/support, including the evidence
-   table above (exact-name miss + score 0).
-2. **Add the data point upstream** on earendil-works/pi#7885 or a fresh issue.
-3. **Accept direct-name discovery.** `pi install npm:pi-session-list` works and
-   https://pi.dev/packages/pi-session-list is live and linkable. This is where the
-   other affected authors landed.
-4. **Publish under a new name** whose index entry is healthy (e.g. a scoped
-   `@omid0390/pi-session-list`), trading the current name for discoverability.
-   Untested; a new package name starts a fresh index record.
+1. **Publish a new version now** (e.g. 0.2.2). The previous reindex attempt
+   (0.2.1) landed within ~24h of package creation, possibly before the initial
+   index entry settled. A publish 5+ days out is a fresh reindex trigger. Cheap
+   and legitimate; needs the usual browser 2FA approval.
+2. **Ask npm to reindex the record.** npmjs.com/support with the tables above.
+   This is the only path that repairs the actual fault.
+3. **Republish under a fresh name** (e.g. scoped `@omid0390/pi-session-list`).
+   A new name gets a new index record, and the 1,874-package evidence shows new
+   records index correctly. Costs the current name; would need a deprecation
+   pointer from `pi-session-list`.
+4. **Report upstream** on earendil-works/pi#7885 / #6991 / #6873. The exact-name
+   evidence here is sharper than what those threads contain.
+5. **Accept name-based discovery.** `pi install npm:pi-session-list` works and
+   https://pi.dev/packages/pi-session-list is live and linkable.
 
 **Do not attempt to inflate download counts.** It is metric fraud, breaches npm's
-terms, risks account and package flagging, and on the evidence above it would not
-change the score anyway.
+terms, risks account and package flagging — and the controlled comparison above
+shows downloads are not the binding constraint anyway (228 vs 231).
 
 ### Re-check commands
 
 ```bash
-# does it match its own name (healthy packages return rank 1)?
+# does it match its own name? (healthy packages return rank 1)
 curl -s "https://registry.npmjs.org/-/v1/search?text=pi-session-list&size=10" \
   | python3 -c 'import json,sys;print([o["package"]["name"] for o in json.load(sys.stdin)["objects"]][:3])'
 # score (0 = unreachable)
@@ -222,6 +226,6 @@ curl -s "https://registry.npmjs.org/-/v1/search?text=session_transcript&size=10"
   | python3 -c 'import json,sys;[print(o["package"]["name"],o["score"]["final"]) for o in json.load(sys.stdin)["objects"]]'
 # in the gallery index?
 curl -sL "https://pi.dev/packages?name=pi-session-list" | grep -o 'packages-count">[^<]*'
-# downloads (explicit range; aliases are stale)
-curl -s "https://api.npmjs.org/downloads/point/2026-10-19:2026-10-26/pi-session-list"
+# downloads (explicit range; the relative aliases are stale)
+curl -s "https://api.npmjs.org/downloads/point/2026-10-26:2026-11-01/pi-session-list"
 ```
