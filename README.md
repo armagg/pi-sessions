@@ -85,9 +85,14 @@ is for finding a session by what it was about and jumping straight into it.
 | Parameter | Meaning |
 |---|---|
 | `session` | Session id, unique id prefix (4+ chars), or `.jsonl` path |
-| `limit`, `offset` | Messages from the end; `offset` pages backwards |
+| `limit`, `offset` | How many messages to return, and how many to skip, both counted from the end given by `direction` |
+| `direction` | `"end"` (default) reads the latest messages; `"start"` reads the opening of the session |
 | `maxChars` | Per-message truncation (default 500) |
 | `toolCalls` | Compact tool call/result lines (default true) |
+
+`direction: "start"` is how you read the original task at the top of a long
+session. Without it you would have to learn the total first and then page back
+by hand, e.g. `offset: 480` on a 500-message session.
 
 Output is the session's active branch, so compaction summaries appear where pi
 put them and abandoned branches stay out.
@@ -96,19 +101,21 @@ put them and abandoned branches stay out.
 Session 01a15886-b1c2-77bd-a78e-017d52b6951b
 Project: /Users/omid/my-project/pi-sessions
 File: /Users/omid/.pi/agent/sessions/…jsonl
-Messages: 99 on the active branch (104 message entries in the file, including other branches), showing 2 at indices 95-98
+Messages: 99 on the active branch (104 message entries in the file, including other branches), showing 2 (original indices 95-98)
 ----------------------------------------
 [96] assistant · 2026-10-20 09:18 (1 thinking)
   ↳ tool bash {"command":"tsc --noEmit"}
   ↳ result bash ok: tsc done
 ```
 
-`showing N` counts rendered messages, so it always matches the body. A tool
-result is grouped with the message that produced it: a page never starts with
-an orphaned `↳ result`, and `limit`/`offset` count messages rather than
-continuation lines. When `recent_sessions` and `session_transcript` disagree
-about a count, that is why — the listing counts message entries in the file
-(all branches), the transcript counts the active branch.
+`showing N` counts rendered messages, so it always matches the body. The
+bracketed `original indices` are positions in the underlying message list, which
+is why the span can be wider than `N`: a tool result is grouped with the message
+that produced it, so a page never starts with an orphaned `↳ result`, and
+`limit`/`offset` count messages rather than continuation lines. When
+`recent_sessions` and `session_transcript` disagree about a count, that is why —
+the listing counts message entries in the file (all branches), the transcript
+counts the active branch.
 
 ## Notes
 

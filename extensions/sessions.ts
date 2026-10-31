@@ -88,6 +88,8 @@ interface TranscriptDetails {
 	from?: number;
 	/** Original index of the last rendered message. */
 	to?: number;
+	/** Which end `offset` counted from. */
+	direction?: "start" | "end";
 	offset?: number;
 	error?: string;
 }
@@ -346,7 +348,7 @@ function formatTranscript(entries: TranscriptEntry[], maxChars: number, toolCall
 /** Open one session file and render its active branch. */
 function readTranscript(
 	path: string,
-	options: { limit: number; offset: number; maxChars: number; toolCalls: boolean },
+	options: { limit: number; offset: number; maxChars: number; toolCalls: boolean; direction?: "start" | "end" },
 ): { text: string; total: number; shown: number; from: number; to: number; id: string; cwd: string } {
 	const manager = SessionManager.open(path);
 	const messages = manager.buildSessionContext().messages as unknown as TranscriptMessage[];
@@ -368,8 +370,15 @@ function readTranscript(
 		else units.push([entry]);
 	}
 
-	const end = Math.max(0, units.length - options.offset);
-	const start = Math.max(0, end - options.limit);
+	// `direction` picks which end `offset` counts from. "end" (the default) gives
+	// the usual "latest messages" view; "start" reads the opening of a session, so a
+	// caller can see the original task without first learning `total` and paging
+	// back by hand.
+	const fromStart = options.direction === "start";
+	const end = fromStart
+		? Math.min(options.offset + options.limit, units.length)
+		: Math.max(0, units.length - options.offset);
+	const start = fromStart ? Math.min(options.offset, units.length) : Math.max(0, end - options.limit);
 	const pickedUnits = units.slice(start, end);
 	const picked = pickedUnits.flat();
 
@@ -616,12 +625,18 @@ export default function sessionsExtension(pi: ExtensionAPI) {
 		name: "session_transcript",
 		label: "Session Transcript",
 		description:
-			"Read the messages of one saved pi session as text. Accepts a session id, a unique id prefix from recent_sessions, or a session file path. Returns the most recent messages with timestamps, user/assistant text, and compact tool call/result lines. Page backwards with offset.",
+			"Read the messages of one saved pi session as text. Accepts a session id, a unique id prefix from recent_sessions, or a session file path. Returns the latest messages by default, with timestamps, user/assistant text, and compact tool call/result lines. Page with offset, or set direction to \"start\" to read the opening of the session instead.",
 		promptSnippet: "Read one saved pi session by id or path (paged, newest last)",
 		parameters: Type.Object({
 			session: Type.String({ description: "Session id, unique id prefix (4+ chars), or path to a session .jsonl file." }),
-			limit: Type.Optional(Type.Number({ description: `Maximum messages to return, counted from the end (default ${TRANSCRIPT_MESSAGES}, max ${MAX_LIMIT}).` })),
-			offset: Type.Optional(Type.Number({ description: "Skip this many messages from the end to page backwards. Default 0." })),
+			limit: Type.Optional(Type.Number({ description: `Maximum messages to return, counted from the end given by direction (default ${TRANSCRIPT_MESSAGES}, max ${MAX_LIMIT}).` })),
+			offset: Type.Optional(Type.Number({ description: "Skip this many messages, counted from the end given by direction. Default 0." })),
+			direction: Type.Optional(
+				Type.Union([Type.Literal("start"), Type.Literal("end")], {
+					description:
+						"Which end to read: \"end\" (default) returns the latest messages, \"start\" returns the opening of the session. offset counts from that end.",
+				}),
+			),
 			maxChars: Type.Optional(Type.Number({ description: `Truncate each message to this many characters (default ${TRANSCRIPT_CHARS}).` })),
 			toolCalls: Type.Optional(Type.Boolean({ description: "Include tool call/result lines. Default true." })),
 		}),
@@ -634,12 +649,14 @@ export default function sessionsExtension(pi: ExtensionAPI) {
 			const info = resolved.info ?? (await findInfoByPath(resolved.path, signal));
 			const limit = clampLimit(params.limit, TRANSCRIPT_MESSAGES);
 			const offset = Math.max(0, Math.floor(params.offset ?? 0));
+			const direction = params.direction === "start" ? "start" : "end";
 			try {
 				const transcript = readTranscript(resolved.path, {
 					limit,
 					offset,
 					maxChars: clampLimit(params.maxChars, TRANSCRIPT_CHARS, MAX_MESSAGE_CHARS),
 					toolCalls: params.toolCalls !== false,
+					direction,
 				});
 				// list() counts message entries across every branch; the transcript renders
 				// the active branch only. Label them separately so the numbers reconcile.
@@ -648,14 +665,21 @@ export default function sessionsExtension(pi: ExtensionAPI) {
 					typeof fileTotal === "number" && fileTotal !== transcript.total
 						? ` (${fileTotal} message entries in the file, including other branches)`
 						: "";
-				const range =
-					transcript.shown > 0 ? `, showing ${transcript.shown} at indices ${transcript.from}-${transcript.to}` : ", nothing to show here";
+				// `shown` counts rendered message units, while `from`/`to` are original
+				// indices, so the span is wider than the count whenever tool results fold
+				// into their parent message. Label them separately so the header never
+				// reads as the contradictory "showing 2 at indices 1-3".
+				const span =
+					transcript.from === transcript.to
+						? ` (original index ${transcript.from})`
+						: ` (original indices ${transcript.from}-${transcript.to})`;
+				const range = transcript.shown > 0 ? `, showing ${transcript.shown}${span}` : ", nothing to show here";
 				const header = [
 					`Session ${transcript.id}`,
 					info?.name ? `Name: ${info.name}` : undefined,
 					`Project: ${transcript.cwd}`,
 					`File: ${resolved.path}`,
-					`Messages: ${transcript.total} on the active branch${branchNote}${range}${offset > 0 ? ` (offset ${offset} from the end)` : ""}`,
+					`Messages: ${transcript.total} on the active branch${branchNote}${range}${offset > 0 ? ` (offset ${offset} from the ${direction})` : ""}`,
 				]
 					.filter(Boolean)
 					.join("\n");
@@ -663,7 +687,7 @@ export default function sessionsExtension(pi: ExtensionAPI) {
 					transcript.text ||
 					(transcript.total === 0
 						? "(no messages)"
-						: `(no renderable messages at offset ${offset}${params.toolCalls === false ? "; toolCalls is false, so tool-only messages are hidden" : ""})`);
+						: `(no renderable messages at offset ${offset} from the ${direction}${params.toolCalls === false ? "; toolCalls is false, so tool-only messages are hidden" : ""})`);
 				const details: TranscriptDetails = {
 					id: transcript.id,
 					path: resolved.path,
@@ -673,6 +697,7 @@ export default function sessionsExtension(pi: ExtensionAPI) {
 					from: transcript.from,
 					to: transcript.to,
 					offset,
+					direction,
 				};
 				return {
 					content: [{ type: "text", text: `${header}\n${"-".repeat(40)}\n${body}` }],
